@@ -8,6 +8,7 @@ from app.services.chunking_service import chunk_text
 from app.services.embedding_service import get_embedding
 from app.models.chunk_model import DocumentChunk
 from app.services.vector_search import search_similar_chunks
+from app.services.rag_llm_service import generate_rag_answer
 
 router = APIRouter()
 
@@ -63,3 +64,18 @@ def search(query: str, db: Session = Depends(get_db)):
         {"chunk_id": r.id, "document_id": r.document_id, "text": r.chunk_text, "similarity": float(r.similarity)}
         for r in results
     ]
+
+@router.get("/ask")
+def ask_question(query: str, db: Session = Depends(get_db)):
+    top_chunks = search_similar_chunks(db, query, top_k=5)
+
+    if not top_chunks:
+        return {"answer": "No relevant documents found. Please upload and process documents first."}
+
+    answer = generate_rag_answer(query, top_chunks)
+
+    return {
+        "question": query,
+        "answer": answer,
+        "sources": [{"document_id": c.document_id, "chunk_id": c.id, "similarity": float(c.similarity)} for c in top_chunks]
+    }
