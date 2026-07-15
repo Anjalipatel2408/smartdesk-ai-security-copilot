@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: smartdesk_postgres
+    environment:
+      POSTGRES_USER: smartdesk_user
+      POSTGRES_PASSWORD: smartdesk_pass123
+      POSTGRES_DB: smartdesk_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - smartdesk_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  smartdesk_postgres_data:
