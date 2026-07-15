@@ -7,6 +7,7 @@ from app.services.text_extractor import extract_text
 from app.services.chunking_service import chunk_text
 from app.services.embedding_service import get_embedding
 from app.models.chunk_model import DocumentChunk
+from app.services.vector_search import search_similar_chunks
 
 router = APIRouter()
 
@@ -54,3 +55,11 @@ def process_document(doc_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Document processed", "total_chunks": len(chunks)}
+
+@router.get("/search")
+def search(query: str, db: Session = Depends(get_db)):
+    results = search_similar_chunks(db, query)
+    return [
+        {"chunk_id": r.id, "document_id": r.document_id, "text": r.chunk_text, "similarity": float(r.similarity)}
+        for r in results
+    ]
