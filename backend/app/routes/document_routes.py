@@ -9,6 +9,10 @@ from app.services.embedding_service import get_embedding
 from app.models.chunk_model import DocumentChunk
 from app.services.vector_search import search_similar_chunks
 from app.services.rag_llm_service import generate_rag_answer
+from app.services.threat_intel_service import fetch_recent_cves
+from app.services.chunking_service import chunk_text
+from app.services.embedding_service import get_embedding
+from datetime import datetime
 
 router = APIRouter()
 
@@ -79,3 +83,38 @@ def ask_question(query: str, db: Session = Depends(get_db)):
         "answer": answer,
         "sources": [{"document_id": c.document_id, "chunk_id": c.id, "similarity": float(c.similarity)} for c in top_chunks]
     }
+@router.get("/ask")
+def ask_question(query: str, db: Session = Depends(get_db)):
+    top_chunks = search_similar_chunks(db, query, top_k=5)
+
+    if not top_chunks:
+        return {"answer": "No relevant documents found."}
+
+    answer, model_used = generate_rag_answer(query, top_chunks)
+
+    return {
+        "question": query,
+        "answer": answer,
+        "model_tier_used": model_used,   # "simple" or "complex"
+        "sources": [{"document_id": c.document_id, "chunk_id": c.id} for c in top_chunks]
+    }
+@router.post("/sync-threat-intel")
+def sync_threat_intel(db: Session = Depends(get_db)):
+    cves = fetch_recent_cves(days_back=7, results_limit=10)
+
+    # Create a virtual "document" entry to represent this sync batch
+    doc = Document(filename=f"NVD_CVE_Feed_{datetime.utcnow().strftime('%Y%m%d')}",
+                    file_path="live_feed", doc_type="cve_report", status="embedded")
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    for cve in cves:
+        text_block = f"{cve['cve_id']} (Severity: {cve['severity']}): {cve['description']}"
+        embedding = get_embedding(text_block)
+        chunk = DocumentChunk(document_id=doc.id, chunk_text=text_block, embedding=embedding)
+        db.add(chunk)
+
+    db.commit()
+
+    return {"message": "Threat intel synced", "cves_added": len(cves)}
