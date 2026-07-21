@@ -13,6 +13,8 @@ from app.services.threat_intel_service import fetch_recent_cves
 from app.services.chunking_service import chunk_text
 from app.services.embedding_service import get_embedding
 from datetime import datetime
+from app.services.compliance_service import check_compliance
+from app.services.text_extractor import extract_text
 
 router = APIRouter()
 
@@ -118,3 +120,23 @@ def sync_threat_intel(db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Threat intel synced", "cves_added": len(cves)}
+
+@router.post("/check-compliance/{doc_id}")
+def check_document_compliance(doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        return {"error": "Document not found"}
+
+    text = extract_text(doc.file_path)
+    results = check_compliance(text)
+
+    covered = sum(1 for r in results if r["status"] == "COVERED")
+    missing = sum(1 for r in results if r["status"] == "MISSING")
+
+    return {
+        "document": doc.filename,
+        "total_controls": len(results),
+        "covered": covered,
+        "missing": missing,
+        "details": results
+    }
